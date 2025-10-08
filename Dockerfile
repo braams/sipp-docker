@@ -10,4 +10,6 @@ RUN apt-get update \
 
 WORKDIR /opt/sipp
 
-ENTRYPOINT /usr/bin/sipp
+ADD entrypoint.sh /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
