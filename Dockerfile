@@ -1,15 +1,50 @@
-FROM debian:bookworm-slim
-ARG SIPP_VERSION=3.7.5
-ENV DEBIAN_FRONTEND=noninteractive
+FROM alpine:3.22 AS build
 
-RUN apt-get update \
-	&& apt-get install -y --no-install-recommends ca-certificates wget sox \
-	&& wget https://github.com/SIPp/sipp/releases/download/v${SIPP_VERSION}/sipp -O /usr/bin/sipp \
-    && chmod 755 /usr/bin/sipp \
-    && mkdir /opt/sipp
+#ARG SIPP_REPO=https://github.com/SIPp/sipp.git
+#ARG SIPP_VERSION=v3.7.5
 
-WORKDIR /opt/sipp
+ARG SIPP_REPO=https://github.com/braams/sipp.git
+ARG SIPP_VERSION=rand-call-id
 
-ADD entrypoint.sh /entrypoint.sh
+ARG FULL=''
+ARG DEBUG=''
 
-ENTRYPOINT ["/entrypoint.sh"]
+RUN apk add --no-cache \
+  binutils \
+  cmake \
+  g++ \
+  gcc \
+  git \
+  gsl-dev \
+  gsl-static \
+  help2man \
+  libpcap-dev \
+  make \
+  ncurses-dev \
+  ncurses-static \
+  ninja \
+  ${FULL:+linux-headers lksctp-tools-dev lksctp-tools-static openssl-dev openssl-libs-static}
+
+RUN git clone --branch ${SIPP_VERSION} --depth 1 ${SIPP_REPO} \
+  && cd sipp \
+  && git submodule update --init
+
+RUN cd sipp \
+  && cmake . -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_STATIC=1 \
+    -DUSE_PCAP=1 \
+    -DUSE_GSL=1 \
+    ${DEBUG:+-DDEBUG=1} \
+    ${FULL:+-DUSE_SSL=1 -DUSE_SCTP=1} \
+  && ninja \
+  && help2man --output=sipp.1 -v -v --no-info \
+         --name='SIP testing tool and traffic generator' ./sipp
+
+FROM alpine:3.22 AS final
+
+COPY --from=build /sipp/sipp /
+
+RUN apk add ncurses
+
+ENTRYPOINT ["/sipp", "-cid_str", "%r-%u-%p@%s"]
